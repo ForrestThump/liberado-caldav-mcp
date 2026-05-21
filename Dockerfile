@@ -1,8 +1,8 @@
-FROM rust:1.87-slim AS builder
+FROM rust:1.89-slim-bookworm AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY Cargo.toml ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs && cargo build --release && rm -rf src
+RUN mkdir src && echo "fn main() {}" > src/main.rs && echo "" > src/lib.rs && cargo build --release && rm -rf src
 COPY src ./src
 RUN touch src/main.rs && cargo build --release
 

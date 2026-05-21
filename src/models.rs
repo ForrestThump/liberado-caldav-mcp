@@ -104,3 +104,52 @@ pub struct DeleteTaskArgs {
     pub task_url: String,
 }
 
+// CardDAV data types
+
+#[derive(Debug, Serialize)]
+pub struct AddressBookInfo {
+    pub url: String,
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ContactInfo {
+    pub uid: String,
+    pub url: String,
+    pub full_name: String,
+    pub email: String,
+    pub phone: String,
+    pub organization: String,
+    pub notes: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListContactsArgs {
+    pub address_book_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateContactArgs {
+    pub address_book_url: String,
+    pub full_name: String,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub organization: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateContactArgs {
+    pub contact_url: String,
+    pub full_name: Option<String>,
+    pub email: Option<String>,
+    pub phone: Option<String>,
+    pub organization: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteContactArgs {
+    pub contact_url: String,
+}

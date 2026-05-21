@@ -4,8 +4,9 @@ use turbomcp::prelude::*;
 
 use crate::caldav;
 use crate::models::{
-    AppState, CreateEventArgs, CreateTaskArgs, DeleteEventArgs, DeleteTaskArgs, ListEventsArgs,
-    ListTasksArgs, UpdateEventArgs, UpdateTaskArgs,
+    AppState, CreateContactArgs, CreateEventArgs, CreateTaskArgs, DeleteContactArgs,
+    DeleteEventArgs, DeleteTaskArgs, ListContactsArgs, ListEventsArgs, ListTasksArgs,
+    UpdateContactArgs, UpdateEventArgs, UpdateTaskArgs,
 };
 
 #[derive(Clone)]
@@ -20,8 +21,7 @@ impl CaldavServer {
             state: Arc::new(AppState {
                 caldav_base_url: std::env::var("CALDAV_URL")
                     .unwrap_or_else(|_| "http://baikal/dav.php".to_string()),
-                username: std::env::var("CALDAV_USERNAME")
-                    .unwrap_or_else(|_| "admin".to_string()),
+                username: std::env::var("CALDAV_USERNAME").unwrap_or_else(|_| "admin".to_string()),
                 password: std::env::var("CALDAV_PASSWORD").unwrap_or_default(),
                 http_client: reqwest::Client::builder()
                     .timeout(std::time::Duration::from_secs(30))
@@ -46,10 +46,17 @@ impl CaldavServer {
         start: Option<String>,
         end: Option<String>,
     ) -> McpResult<String> {
-        caldav::list_events(&self.state, &ListEventsArgs { calendar_url, start, end })
-            .await
-            .map(|v| serde_json::to_string_pretty(&v).unwrap())
-            .map_err(|e| McpError::internal(e.to_string()))
+        caldav::list_events(
+            &self.state,
+            &ListEventsArgs {
+                calendar_url,
+                start,
+                end,
+            },
+        )
+        .await
+        .map(|v| serde_json::to_string_pretty(&v).unwrap())
+        .map_err(|e| McpError::internal(e.to_string()))
     }
 
     #[tool("Create a new calendar event")]
@@ -64,7 +71,14 @@ impl CaldavServer {
     ) -> McpResult<String> {
         caldav::create_event(
             &self.state,
-            &CreateEventArgs { calendar_url, summary, start, end, description, location },
+            &CreateEventArgs {
+                calendar_url,
+                summary,
+                start,
+                end,
+                description,
+                location,
+            },
         )
         .await
         .map(|v| serde_json::to_string_pretty(&v).unwrap())
@@ -83,7 +97,14 @@ impl CaldavServer {
     ) -> McpResult<String> {
         caldav::update_event(
             &self.state,
-            &UpdateEventArgs { event_url, summary, start, end, description, location },
+            &UpdateEventArgs {
+                event_url,
+                summary,
+                start,
+                end,
+                description,
+                location,
+            },
         )
         .await
         .map(|_| "updated".to_string())
@@ -104,10 +125,16 @@ impl CaldavServer {
         calendar_url: String,
         include_completed: Option<bool>,
     ) -> McpResult<String> {
-        caldav::list_tasks(&self.state, &ListTasksArgs { calendar_url, include_completed })
-            .await
-            .map(|v| serde_json::to_string_pretty(&v).unwrap())
-            .map_err(|e| McpError::internal(e.to_string()))
+        caldav::list_tasks(
+            &self.state,
+            &ListTasksArgs {
+                calendar_url,
+                include_completed,
+            },
+        )
+        .await
+        .map(|v| serde_json::to_string_pretty(&v).unwrap())
+        .map_err(|e| McpError::internal(e.to_string()))
     }
 
     #[tool("Create a new task (VTODO)")]
@@ -121,7 +148,13 @@ impl CaldavServer {
     ) -> McpResult<String> {
         caldav::create_task(
             &self.state,
-            &CreateTaskArgs { calendar_url, summary, description, due, priority },
+            &CreateTaskArgs {
+                calendar_url,
+                summary,
+                description,
+                due,
+                priority,
+            },
         )
         .await
         .map(|v| serde_json::to_string_pretty(&v).unwrap())
@@ -140,7 +173,14 @@ impl CaldavServer {
     ) -> McpResult<String> {
         caldav::update_task(
             &self.state,
-            &UpdateTaskArgs { task_url, summary, description, due, status, priority },
+            &UpdateTaskArgs {
+                task_url,
+                summary,
+                description,
+                due,
+                status,
+                priority,
+            },
         )
         .await
         .map(|_| "updated".to_string())
@@ -150,6 +190,82 @@ impl CaldavServer {
     #[tool("Delete a task")]
     async fn delete_task(&self, task_url: String) -> McpResult<String> {
         caldav::delete_task(&self.state, &DeleteTaskArgs { task_url })
+            .await
+            .map(|_| "deleted".to_string())
+            .map_err(|e| McpError::internal(e.to_string()))
+    }
+
+    #[tool("List all CardDAV address books")]
+    async fn list_address_books(&self) -> McpResult<String> {
+        caldav::list_address_books(&self.state)
+            .await
+            .map(|v| serde_json::to_string_pretty(&v).unwrap())
+            .map_err(|e| McpError::internal(e.to_string()))
+    }
+
+    #[tool("List contacts in an address book")]
+    async fn list_contacts(&self, address_book_url: String) -> McpResult<String> {
+        caldav::list_contacts(&self.state, &ListContactsArgs { address_book_url })
+            .await
+            .map(|v| serde_json::to_string_pretty(&v).unwrap())
+            .map_err(|e| McpError::internal(e.to_string()))
+    }
+
+    #[tool("Create a new contact (VCARD)")]
+    async fn create_contact(
+        &self,
+        address_book_url: String,
+        full_name: String,
+        email: Option<String>,
+        phone: Option<String>,
+        organization: Option<String>,
+        notes: Option<String>,
+    ) -> McpResult<String> {
+        caldav::create_contact(
+            &self.state,
+            &CreateContactArgs {
+                address_book_url,
+                full_name,
+                email,
+                phone,
+                organization,
+                notes,
+            },
+        )
+        .await
+        .map(|v| serde_json::to_string_pretty(&v).unwrap())
+        .map_err(|e| McpError::internal(e.to_string()))
+    }
+
+    #[tool("Update an existing contact; only provided fields are changed")]
+    async fn update_contact(
+        &self,
+        contact_url: String,
+        full_name: Option<String>,
+        email: Option<String>,
+        phone: Option<String>,
+        organization: Option<String>,
+        notes: Option<String>,
+    ) -> McpResult<String> {
+        caldav::update_contact(
+            &self.state,
+            &UpdateContactArgs {
+                contact_url,
+                full_name,
+                email,
+                phone,
+                organization,
+                notes,
+            },
+        )
+        .await
+        .map(|_| "updated".to_string())
+        .map_err(|e| McpError::internal(e.to_string()))
+    }
+
+    #[tool("Delete a contact")]
+    async fn delete_contact(&self, contact_url: String) -> McpResult<String> {
+        caldav::delete_contact(&self.state, &DeleteContactArgs { contact_url })
             .await
             .map(|_| "deleted".to_string())
             .map_err(|e| McpError::internal(e.to_string()))
