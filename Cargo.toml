@@ -1,14 +1,15 @@
 [package]
-name = "caldav-mcp"
+name = "liberado-caldav-mcp"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [[bin]]
-name = "caldav-mcp"
+name = "liberado-caldav-mcp"
 path = "src/main.rs"
 
 [lib]
-name = "caldav_mcp_lib"
+name = "liberado_caldav_mcp"
 path = "src/lib.rs"
 
 [dependencies]
