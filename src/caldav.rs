@@ -103,14 +103,29 @@ fn parse_multistatus(xml: &str) -> Vec<(String, HashMap<String, String>)> {
 // iCal helpers
 // ---------------------------------------------------------------------------
 
-/// Convert ISO 8601 datetime/date string to iCal format.
-/// Returns (ical_string, is_all_day).
+/// Convert a datetime/date string to iCal format. Returns (ical_string, is_all_day).
+///
+/// Accepts, in order: RFC3339 (`2026-07-17T00:00:00Z`), ISO date (`2026-07-17`), and the iCal
+/// *basic* forms — `20260717T000000Z` / `20260717T000000` (no separators; assumed UTC) and
+/// `20260717`. The basic forms matter for two reasons: models routinely emit them (that is exactly
+/// what broke a live briefing — `invalid datetime: 20260717T000000`), and they are the very format
+/// this module emits elsewhere, so accepting them makes the tool's own output round-trip as input.
 fn iso_to_ical_dt(iso: &str) -> Result<(String, bool), CaldavError> {
+    let iso = iso.trim();
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(iso) {
         let utc = dt.with_timezone(&Utc);
         return Ok((utc.format("%Y%m%dT%H%M%SZ").to_string(), false));
     }
     if let Ok(date) = chrono::NaiveDate::parse_from_str(iso, "%Y-%m-%d") {
+        return Ok((date.format("%Y%m%d").to_string(), true));
+    }
+    // iCal basic datetime, with or without the trailing UTC 'Z' (assume UTC when absent).
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(iso.trim_end_matches('Z'), "%Y%m%dT%H%M%S")
+    {
+        return Ok((dt.format("%Y%m%dT%H%M%SZ").to_string(), false));
+    }
+    // iCal basic date (all-day).
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(iso, "%Y%m%d") {
         return Ok((date.format("%Y%m%d").to_string(), true));
     }
     Err(CaldavError::InvalidArg(format!("invalid datetime: {iso}")))
@@ -797,6 +812,62 @@ pub async fn delete_contact(state: &AppState, args: &DeleteContactArgs) -> Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- iso_to_ical_dt: the datetime formats models actually send ---
+
+    #[test]
+    fn iso_to_ical_rfc3339() {
+        assert_eq!(
+            iso_to_ical_dt("2026-07-17T00:00:00Z").unwrap(),
+            ("20260717T000000Z".to_string(), false)
+        );
+    }
+
+    #[test]
+    fn iso_to_ical_plain_date_is_all_day() {
+        assert_eq!(
+            iso_to_ical_dt("2026-07-17").unwrap(),
+            ("20260717".to_string(), true)
+        );
+    }
+
+    #[test]
+    fn iso_to_ical_basic_datetime_no_z() {
+        // The exact string that failed a live briefing: "invalid datetime: 20260717T000000".
+        assert_eq!(
+            iso_to_ical_dt("20260717T000000").unwrap(),
+            ("20260717T000000Z".to_string(), false)
+        );
+    }
+
+    #[test]
+    fn iso_to_ical_basic_datetime_with_z() {
+        assert_eq!(
+            iso_to_ical_dt("20260717T133000Z").unwrap(),
+            ("20260717T133000Z".to_string(), false)
+        );
+    }
+
+    #[test]
+    fn iso_to_ical_basic_date_is_all_day() {
+        assert_eq!(
+            iso_to_ical_dt("20260717").unwrap(),
+            ("20260717".to_string(), true)
+        );
+    }
+
+    #[test]
+    fn iso_to_ical_round_trips_its_own_output() {
+        // The module emits "%Y%m%dT%H%M%SZ"; feeding that straight back must work.
+        let emitted = "20260717T090000Z";
+        assert_eq!(iso_to_ical_dt(emitted).unwrap().0, emitted);
+    }
+
+    #[test]
+    fn iso_to_ical_rejects_garbage() {
+        assert!(iso_to_ical_dt("not-a-date").is_err());
+        assert!(iso_to_ical_dt("2026-13-40").is_err());
+    }
 
     fn make_state(base_url: &str, username: &str) -> AppState {
         AppState {
