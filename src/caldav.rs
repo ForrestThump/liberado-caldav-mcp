@@ -119,6 +119,13 @@ fn iso_to_ical_dt(iso: &str) -> Result<(String, bool), CaldavError> {
     if let Ok(date) = chrono::NaiveDate::parse_from_str(iso, "%Y-%m-%d") {
         return Ok((date.format("%Y%m%d").to_string(), true));
     }
+    // ISO 8601 extended datetime with NO timezone, e.g. "2026-07-17T00:00:00" (assume UTC). This is
+    // not valid RFC3339 (which requires an offset), yet models routinely emit it.
+    if let Ok(dt) =
+        chrono::NaiveDateTime::parse_from_str(iso.trim_end_matches('Z'), "%Y-%m-%dT%H:%M:%S")
+    {
+        return Ok((dt.format("%Y%m%dT%H%M%SZ").to_string(), false));
+    }
     // iCal basic datetime, with or without the trailing UTC 'Z' (assume UTC when absent).
     if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(iso.trim_end_matches('Z'), "%Y%m%dT%H%M%S")
     {
@@ -255,6 +262,18 @@ fn build_task_ical(props: &HashMap<String, String>) -> String {
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
+/// Resolve a request target against the configured base URL. CalDAV discovery (`list_calendars`)
+/// hands back **relative** hrefs like `/dav.php/calendars/admin/personal/`, and the model then passes
+/// one straight into `list_events`. reqwest rejects a schemeless URL with an opaque "builder error"
+/// (which is exactly what failed a live briefing), so join every target onto the base first. An
+/// already-absolute URL is returned unchanged by `Url::join`, so this is safe for every caller.
+fn resolve_url(base: &str, url: &str) -> Result<String, CaldavError> {
+    reqwest::Url::parse(base)
+        .and_then(|b| b.join(url))
+        .map(|u| u.to_string())
+        .map_err(|e| CaldavError::InvalidArg(format!("could not resolve url '{url}': {e}")))
+}
+
 async fn dav_request(
     state: &AppState,
     method: &str,
@@ -264,6 +283,8 @@ async fn dav_request(
 ) -> Result<String, CaldavError> {
     let method = Method::from_bytes(method.as_bytes())
         .map_err(|e| CaldavError::InvalidArg(e.to_string()))?;
+
+    let url = resolve_url(&state.caldav_base_url, url)?;
 
     let mut req = state
         .http_client
@@ -837,6 +858,55 @@ mod tests {
         assert_eq!(
             iso_to_ical_dt("20260717T000000").unwrap(),
             ("20260717T000000Z".to_string(), false)
+        );
+    }
+
+    #[test]
+    fn iso_to_ical_extended_datetime_no_timezone() {
+        // The second live-briefing failure: "invalid datetime: 2026-07-17T00:00:00" (ISO extended,
+        // no offset — not valid RFC3339, but models send it).
+        assert_eq!(
+            iso_to_ical_dt("2026-07-17T00:00:00").unwrap(),
+            ("20260717T000000Z".to_string(), false)
+        );
+        assert_eq!(
+            iso_to_ical_dt("2026-07-17T13:30:00").unwrap(),
+            ("20260717T133000Z".to_string(), false)
+        );
+    }
+
+    // --- resolve_url: relative discovery hrefs must be joined onto the base ---
+
+    #[test]
+    fn resolve_url_joins_absolute_path_href() {
+        // The exact shape that produced "builder error": a relative href from list_calendars.
+        assert_eq!(
+            resolve_url(
+                "https://cal.example.com/dav.php/calendars/admin/",
+                "/dav.php/calendars/admin/personal/"
+            )
+            .unwrap(),
+            "https://cal.example.com/dav.php/calendars/admin/personal/"
+        );
+    }
+
+    #[test]
+    fn resolve_url_passes_through_absolute_url() {
+        assert_eq!(
+            resolve_url(
+                "https://cal.example.com/dav.php/",
+                "https://other.example.com/x/"
+            )
+            .unwrap(),
+            "https://other.example.com/x/"
+        );
+    }
+
+    #[test]
+    fn resolve_url_preserves_port() {
+        assert_eq!(
+            resolve_url("https://cal.example.com:8443/dav/", "/dav/cal/").unwrap(),
+            "https://cal.example.com:8443/dav/cal/"
         );
     }
 
